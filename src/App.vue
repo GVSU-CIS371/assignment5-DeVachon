@@ -1,7 +1,17 @@
 <template>
   <div>
-    <Beverage :isIced="beverageStore.currentTemp === 'Cold'" />
+    <header class="auth-header">
+      <div v-if="!beverageStore.user">
+        <button class="auth-btn" @click="withGoogle">Sign in with Google</button>
+      </div>
+      <div v-else class="signed-in">
+        <span class="user-name">{{ beverageStore.user.displayName || beverageStore.user.email }}</span>
+        <button class="auth-btn" @click="doSignOut">Sign out</button>
+      </div>
+      <div v-if="message" class="auth-message">{{ message }}</div>
+    </header>
 
+    <Beverage :isIced="beverageStore.currentTemp === 'Cold'" />
     <ul>
       <li>
         <template v-for="temp in beverageStore.temps" :key="temp">
@@ -18,7 +28,6 @@
         </template>
       </li>
     </ul>
-
     <ul>
       <li>
         <template v-for="b in beverageStore.bases" :key="b.id">
@@ -35,7 +44,6 @@
         </template>
       </li>
     </ul>
-
     <ul>
       <li>
         <template v-for="s in beverageStore.syrups" :key="s.id">
@@ -52,7 +60,6 @@
         </template>
       </li>
     </ul>
-
     <ul>
       <li>
         <template v-for="c in beverageStore.creamers" :key="c.id">
@@ -69,60 +76,71 @@
         </template>
       </li>
     </ul>
+    <input type="text" placeholder="Beverage Name" v-model="beverageStore.currentName" />
+    <button :disabled="!beverageStore.user" @click="makeBeverage">🍺 Make Beverage</button>
+  </div>
 
-    <div class="auth-row">
-      <button @click="withGoogle">Sign in with Google</button>
+    <div id="beverage-container" style="margin-top: 20px">
+      <ul>
+        <li v-for="b in beverageStore.beverages" :key="b.id">
+          <label>
+            <input
+              type="radio"
+              name="saved"
+              :id="`bev-${b.id}`"
+              :value="b"
+              v-model="beverageStore.currentBeverage"
+              @change="beverageStore.showBeverage(b)"
+            />
+            {{ b.name }}
+          </label>
+        </li>
+      </ul>
     </div>
-    <input
-      v-model="beverageStore.currentName"
-      type="text"
-      placeholder="Beverage Name"
-    />
-
-    <button @click="handleMakeBeverage">🍺 Make Beverage</button>
-
-    <p v-if="message" class="status-message">
-      {{ message }}
-    </p>
-  </div>
-
-  <div style="margin-top: 20px">
-    <template v-for="beverage in beverageStore.beverages" :key="beverage.id">
-      <input
-        type="radio"
-        :id="beverage.id"
-        :value="beverage"
-        v-model="beverageStore.currentBeverage"
-        @change="beverageStore.showBeverage()"
-      />
-      <label :for="beverage.id">{{ beverage.name }}</label>
-    </template>
-  </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
 import Beverage from "./components/Beverage.vue";
 import { useBeverageStore } from "./stores/beverageStore";
+import { onMounted, ref } from "vue";
+import { signInWithPopup, signOut, onAuthStateChanged } from "firebase/auth";
+import { auth, googleProvider } from "./firebase";
 
 const beverageStore = useBeverageStore();
-beverageStore.init();
-
 const message = ref("");
 
-const showMessage = (txt: string) => {
-  message.value = txt;
-  setTimeout(() => {
-    message.value = "";
-  }, 5000);
-};
+async function withGoogle() {
+  message.value = "";
+  try {
+    await signInWithPopup(auth, googleProvider);
+    // onAuthStateChanged will call setUser in the store
+  } catch (err: any) {
+    message.value = err?.message || "Error signing in";
+  }
+}
 
-const withGoogle = async () => {};
+async function doSignOut() {
+  message.value = "";
+  try {
+    await signOut(auth);
+    // store will be updated via onAuthStateChanged
+  } catch (err: any) {
+    message.value = err?.message || "Error signing out";
+  }
+}
 
-const handleMakeBeverage = () => {
-  const txt = beverageStore.makeBeverage();
-  showMessage(txt);
-};
+async function makeBeverage() {
+  message.value = "";
+  const res = await beverageStore.makeBeverage();
+  if (res) message.value = res as string;
+}
+
+onMounted(async () => {
+  await beverageStore.init();
+  onAuthStateChanged(auth, (u) => {
+    beverageStore.setUser(u as any);
+  });
+});
 </script>
 
 <style lang="scss">
@@ -136,37 +154,27 @@ html {
   background-color: #6e4228;
   background: linear-gradient(to bottom, #6e4228 0%, #956f5a 100%);
 }
-
 ul {
   list-style: none;
 }
 
-.auth-row {
-  margin-top: 10px;
-  margin-bottom: 8px;
+.auth-header {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 6px;
 }
 
-.user-label {
-  color: #ffffff;
-  font-size: 0.9rem;
+.auth-message {
+  margin-left: 8px;
 }
 
-.hint {
-  margin-top: 4px;
-  color: #ffffff;
-  font-size: 0.85rem;
-}
-
-.status-message {
-  margin-top: 8px;
-  padding: 6px 10px;
-  border-radius: 4px;
-  background: #fff3cd;
-  border: 1px solid #ffeeba;
-  color: #856404;
-  font-size: 0.9rem;
+.user-name {
+  font-weight: 600;
 }
 </style>
